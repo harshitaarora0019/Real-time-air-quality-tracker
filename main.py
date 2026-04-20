@@ -70,26 +70,42 @@ else:
     st.markdown("""
         <style>
         .card {
-            background-color: white;
-            color: black;
-            border-radius: 10px;
-            padding: 0.8rem;
+            background: rgba(255, 255, 255, 0.55);
+            color: #1a1a2e;
+            border-radius: 14px;
+            padding: 0.9rem 1rem;
             margin: 0.4rem;
-            box-shadow: 0 0 6px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
             font-size: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
         }
-        .section-title, .aqi-header, h1, h3, h4, p, div {
-            color: black !important;
+        .card h3, .card h4 {
+            color: #1a1a2e !important;
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+        }
+        .card p, .card b {
+            color: #2d2d44 !important;
         }
         .section-title {
-            font-size: 24px;
+            font-size: 22px;
             font-weight: bold;
             margin-top: 1.2rem;
             margin-bottom: 0.8rem;
+            color: #ffffff !important;
+            text-shadow: 0 1px 6px rgba(0,0,0,0.5);
         }
         .aqi-header {
             font-size: 24px;
             font-weight: bold;
+            color: #ffffff !important;
+            text-shadow: 0 1px 6px rgba(0,0,0,0.5);
+        }
+        h1 {
+            color: #ffffff !important;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.55);
         }
         </style>
     """, unsafe_allow_html=True)
@@ -244,58 +260,75 @@ if city:
                 with cols3[idx % 3]:
                     st.markdown(f"<div class='card'><h4>{plant}</h4><p>{desc}</p></div>", unsafe_allow_html=True)
 
-            forecast = requests.get(f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&hourly=pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,european_aqi&timezone=auto").json()
+             try:
+                forecast = requests.get(
+                    f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}"
+                    f"&hourly=pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,european_aqi&timezone=auto"
+                ).json()
 
-            if forecast:
-                hourly = forecast["hourly"]
-                df_forecast = pd.DataFrame({
-                    "Time": pd.to_datetime(hourly["time"]),
-                    "PM2.5": hourly["pm2_5"],
-                    "PM10": hourly["pm10"],
-                    "CO": hourly["carbon_monoxide"],
-                    "NO2": hourly["nitrogen_dioxide"]
-                }).set_index("Time")
-            
-            df_forecast = df_forecast.fillna(method="ffill").fillna(method="bfill")
+                hourly = forecast.get("hourly", {})
+                required_keys = ["time", "pm2_5", "pm10", "carbon_monoxide", "nitrogen_dioxide"]
 
-            st.markdown("<div class='section-title'>📈 Pollutant Forecast (Next 48 Hours)</div>", unsafe_allow_html=True)
-            st.line_chart(df_forecast, use_container_width=True)
+                if all(k in hourly and hourly[k] for k in required_keys):
+                    df_forecast = pd.DataFrame({
+                        "Time": pd.to_datetime(hourly["time"]),
+                        "PM2.5": hourly["pm2_5"],
+                        "PM10": hourly["pm10"],
+                        "CO": hourly["carbon_monoxide"],
+                        "NO2": hourly["nitrogen_dioxide"]
+                    }).set_index("Time")
 
-            def predict_next_hours(series, future=12):
-                X = np.arange(len(series)).reshape(-1, 1)
-                y = np.array(series).reshape(-1, 1)
-                model = LinearRegression().fit(X, y)
-                X_future = np.arange(len(series), len(series) + future).reshape(-1, 1)
-                prediction = model.predict(X_future).flatten()
-                return prediction
+                    df_forecast = df_forecast.ffill().bfill()
+                    df_forecast = df_forecast.dropna()
 
-            predictions = {}
-            for pollutant in ["PM2.5", "PM10", "CO", "NO2"]:
-                predictions[pollutant] = predict_next_hours(df_forecast[pollutant].values, future=12)
+                    if df_forecast.empty:
+                        st.warning("Forecast data is empty after cleaning.")
+                    else:
+                        st.markdown("<div class='section-title'>📈 Pollutant Forecast (Next 48 Hours)</div>", unsafe_allow_html=True)
+                        st.line_chart(df_forecast, use_container_width=True)
 
-            pred_index = pd.date_range(start=df_forecast.index[-1] + pd.Timedelta(hours=1), periods=12, freq="H")
-            df_pred = pd.DataFrame(predictions, index=pred_index)
+                        def predict_next_hours(series, future=12):
+                            clean = pd.Series(series).dropna()
+                            if len(clean) < 2:
+                                return np.full(future, np.nan)
+                            X = np.arange(len(clean)).reshape(-1, 1)
+                            y = clean.values.reshape(-1, 1)
+                            model = LinearRegression().fit(X, y)
+                            X_future = np.arange(len(clean), len(clean) + future).reshape(-1, 1)
+                            return model.predict(X_future).flatten()
 
-            st.markdown("<div class='section-title'>🔮 Pollutant Prediction (Next 12 Hours)</div>", unsafe_allow_html=True)
-            st.line_chart(df_pred, use_container_width=True)
+                        predictions = {}
+                        for pollutant in ["PM2.5", "PM10", "CO", "NO2"]:
+                            predictions[pollutant] = predict_next_hours(df_forecast[pollutant].values, future=12)
 
-            st.markdown("<div class='section-title'>🧾 Forecast Summary</div>", unsafe_allow_html=True)
-            cols = st.columns(4)
-            for idx, pollutant in enumerate(["PM2.5", "PM10", "CO", "NO2"]):
-                val = df_pred[pollutant].iloc[-1]
-                summary = pollutant_summary(pollutant, val)
-                status = "Safe" if "safe" in summary.lower() else "Not Safe"
-                with cols[idx]:
-                    st.markdown(f"""
-                        <div class='card'>
-                        <h4 style='text-align: center;'>{pollutant}</h4>
-                        <p style='text-align: center;'>Predicted: {val:.2f} μg/m³</p>
-                        <p style='text-align: center;'>Status: {status}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
+                        pred_index = pd.date_range(
+                            start=df_forecast.index[-1] + pd.Timedelta(hours=1),
+                            periods=12, freq="h"
+                        )
+                        df_pred = pd.DataFrame(predictions, index=pred_index).dropna()
 
-        else:
-            st.warning("Forecast data not available.")
+                        if df_pred.empty:
+                            st.warning("Not enough data to generate predictions.")
+                        else:
+                            st.markdown("<div class='section-title'>🔮 Pollutant Prediction (Next 12 Hours)</div>", unsafe_allow_html=True)
+                            st.line_chart(df_pred, use_container_width=True)
 
-    except:
-        st.error("Could not fetch data. Please check the city name.")
+                            st.markdown("<div class='section-title'>🧾 Forecast Summary</div>", unsafe_allow_html=True)
+                            cols = st.columns(4)
+                            for idx, pollutant in enumerate(["PM2.5", "PM10", "CO", "NO2"]):
+                                val = df_pred[pollutant].iloc[-1]
+                                summary = pollutant_summary(pollutant, val)
+                                status = "Safe" if "safe" in summary.lower() else "Not Safe"
+                                with cols[idx]:
+                                    st.markdown(f"""
+                                        <div class='card'>
+                                        <h4 style='text-align: center;'>{pollutant}</h4>
+                                        <p style='text-align: center;'>Predicted: {val:.2f} μg/m³</p>
+                                        <p style='text-align: center;'>Status: {status}</p>
+                                        </div>
+                                    """, unsafe_allow_html=True)
+                else:
+                    st.warning("Forecast data unavailable or incomplete for this location.")
+
+            except Exception as forecast_err:
+                st.warning(f"Could not load forecast data: {forecast_err}")
