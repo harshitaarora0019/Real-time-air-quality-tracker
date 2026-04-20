@@ -1,18 +1,12 @@
-import streamlit as st  # Streamlit for building the web app interface
-import requests          # To make HTTP requests for APIs
-import os                # For file path operations
-import base64 
+import streamlit as st
+import requests
+import base64
 import pandas as pd
 from sklearn.linear_model import LinearRegression
-
-import numpy as np # For encoding and decoding data, commonly used with audio in Streamlit
-
+import numpy as np
 
 # Init
 st.set_page_config(page_title="Real-Time Air Quality Tracker", layout="wide")
-
-# Language and 'state'
-language = "en"
 
 # 🎨 Theme selector
 st.sidebar.title("🎨 Theme")
@@ -30,7 +24,7 @@ if theme == "Light":
     st.markdown(f"""
         <style>
         .stApp {{
-            background-image: url("data:image/avif;base64,{base64_img}");
+            background-image: url("data:image/png;base64,{base64_img}");
             background-size: cover;
             background-repeat: no-repeat;
             background-attachment: fixed;
@@ -111,7 +105,7 @@ else:
     """, unsafe_allow_html=True)
 
 # 📢 Headline
-st.markdown(f"<h1 style='text-align: center;'>🌍 Advance Real-Time Air Quality Tracker</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>🌍 Advance Real-Time Air Quality Tracker</h1>", unsafe_allow_html=True)
 
 # Sidebar inputs
 st.sidebar.markdown("### 🏙 Enter Your City")
@@ -142,7 +136,8 @@ if airbot_input:
     else:
         response += " Monitor AQI and limit outdoor activity in high pollution."
     st.sidebar.success(response)
-    
+
+
 def pollutant_summary(pollutant, value):
     thresholds = {
         "PM2.5": [(0, 12, "Good and safe"), (12, 35, "Moderate"), (35, 55, "Unhealthy"), (55, 1000, "Hazardous")],
@@ -159,7 +154,7 @@ def pollutant_summary(pollutant, value):
 # API key
 API_KEY = "686d487ae00c37f15964bc0bcba6b953"
 
-# Pollutant details
+
 def pollutant_details(label):
     info = {
         "PM2.5": ("Can penetrate lungs and bloodstream.", "Asthma, lung cancer.", "Use air purifiers, stay indoors."),
@@ -169,7 +164,7 @@ def pollutant_details(label):
     }
     return info.get(label, ("", "", ""))
 
-# Plants
+
 def recommended_plants():
     return [
         ("🌿 Areca Palm", "Releases moisture and removes toxins."),
@@ -177,19 +172,27 @@ def recommended_plants():
         ("🍀 Money Plant", "Filters air toxins and boosts oxygen.")
     ]
 
+
 # Main display
 if city:
     try:
-        geo = requests.get(f"http://api.openweathermap.org/geo/1.0/direct?q={city}&limit=1&appid={API_KEY}").json()
+        geo = requests.get(
+            f"http://api.openweathermap.org/geo/1.0/direct?q={city}&limit=1&appid={API_KEY}"
+        ).json()
+
         if geo:
             lat, lon = geo[0]['lat'], geo[0]['lon']
 
-            weather_data = requests.get(f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric").json()
+            weather_data = requests.get(
+                f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric"
+            ).json()
             temp = weather_data['main']['temp']
             wind = weather_data['wind']['speed']
             humidity = weather_data['main']['humidity']
 
-            air_data = requests.get(f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}").json()
+            air_data = requests.get(
+                f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}"
+            ).json()
             comp = air_data['list'][0]['components']
             aqi = air_data['list'][0]['main']['aqi']
 
@@ -260,7 +263,8 @@ if city:
                 with cols3[idx % 3]:
                     st.markdown(f"<div class='card'><h4>{plant}</h4><p>{desc}</p></div>", unsafe_allow_html=True)
 
-             try:
+            # Forecasting — isolated try/except so failures don't crash main display
+            try:
                 forecast = requests.get(
                     f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}"
                     f"&hourly=pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,european_aqi&timezone=auto"
@@ -278,8 +282,7 @@ if city:
                         "NO2": hourly["nitrogen_dioxide"]
                     }).set_index("Time")
 
-                    df_forecast = df_forecast.ffill().bfill()
-                    df_forecast = df_forecast.dropna()
+                    df_forecast = df_forecast.ffill().bfill().dropna()
 
                     if df_forecast.empty:
                         st.warning("Forecast data is empty after cleaning.")
@@ -314,12 +317,12 @@ if city:
                             st.line_chart(df_pred, use_container_width=True)
 
                             st.markdown("<div class='section-title'>🧾 Forecast Summary</div>", unsafe_allow_html=True)
-                            cols = st.columns(4)
+                            cols4 = st.columns(4)
                             for idx, pollutant in enumerate(["PM2.5", "PM10", "CO", "NO2"]):
                                 val = df_pred[pollutant].iloc[-1]
                                 summary = pollutant_summary(pollutant, val)
                                 status = "Safe" if "safe" in summary.lower() else "Not Safe"
-                                with cols[idx]:
+                                with cols4[idx]:
                                     st.markdown(f"""
                                         <div class='card'>
                                         <h4 style='text-align: center;'>{pollutant}</h4>
@@ -332,3 +335,9 @@ if city:
 
             except Exception as forecast_err:
                 st.warning(f"Could not load forecast data: {forecast_err}")
+
+        else:
+            st.warning("City not found. Please check the city name.")
+
+    except Exception as e:
+        st.error("Could not fetch data. Please check the city name.")
