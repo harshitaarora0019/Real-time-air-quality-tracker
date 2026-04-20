@@ -1,220 +1,301 @@
-import pyttsx3
-import requests
+import streamlit as st  # Streamlit for building the web app interface
+import requests          # To make HTTP requests for APIs
+import os                # For file path operations
+import base64 
+import pandas as pd
+from sklearn.linear_model import LinearRegression
 
-# 🔊 Speak + Print in English
-def speak_and_print(text):
-    lines = text.split('\n')
-    for line in lines:
-        print(line)
-        engine = pyttsx3.init()
-        engine.setProperty('rate', 150)
-        engine.say(line)
-        engine.runAndWait()
+import numpy as np # For encoding and decoding data, commonly used with audio in Streamlit
 
-# 🧠 AQI Status Mapping
-def get_aqi_status(aqi):
-    status_map = {
-        1: "Good",
-        2: "Fair",
-        3: "Moderate",
-        4: "Poor",
-        5: "Very Poor"
-    }
-    return status_map.get(aqi, "Unknown")
 
-# 🩺 Health message per pollutant
-def health_message(value, pollutant):
-    if pollutant == "PM2.5":
-        if value <= 12:
-            return "PM2.5 levels are good and safe."
-        elif value <= 35.4:
-            return "PM2.5 levels are moderate; may cause asthma and lung irritation."
-        elif value <= 55.4:
-            return "PM2.5 levels are unhealthy for sensitive groups; decreased lung function possible."
-        else:
-            return "PM2.5 levels are hazardous; risk of heart attacks and lung cancer increases."
+# Init
+st.set_page_config(page_title="Real-Time Air Quality Tracker", layout="wide")
 
-    elif pollutant == "PM10":
-        if value <= 54:
-            return "PM10 levels are good and safe."
-        elif value <= 154:
-            return "PM10 levels are moderate; may cause asthma and respiratory symptoms."
-        elif value <= 254:
-            return "PM10 levels are unhealthy for sensitive groups; decreased lung function possible."
-        else:
-            return "PM10 levels are hazardous; increased risk of lung diseases."
+# Language and 'state'
+language = "en"
 
-    elif pollutant == "CO":
-        if value <= 4000:
-            return "CO levels are good and safe."
-        elif value <= 10000:
-            return "High CO exposure may cause headaches and dizziness."
-        else:
-            return "Very high CO levels; risk of serious cardiovascular effects."
+# 🎨 Theme selector
+st.sidebar.title("🎨 Theme")
+theme = st.sidebar.radio("Choose Theme", ["Light", "Dark"], key="theme_selector")
 
-    elif pollutant == "NO2":
-        if value <= 53:
-            return "NO2 levels are good and safe."
-        elif value <= 100:
-            return "NO2 levels may cause respiratory inflammation and reduce lung function."
-        else:
-            return "High NO2 exposure increases risk of respiratory diseases and asthma."
+# 🌄 Background only in Light mode
+if theme == "Light":
+    def get_base64_of_image(image_path):
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
 
+    image_path = "pic.png"
+    base64_img = get_base64_of_image(image_path)
+
+    st.markdown(f"""
+        <style>
+        .stApp {{
+            background-image: url("data:image/avif;base64,{base64_img}");
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }}
+        </style>
+    """, unsafe_allow_html=True)
+
+# 🌈 Theme CSS
+if theme == "Dark":
+    st.markdown("""
+        <style>
+        .card {
+            background-color: #1f1f1f;
+            color: white;
+            border-radius: 10px;
+            padding: 0.8rem;
+            margin: 0.4rem;
+            box-shadow: 0 0 8px rgba(255,255,255,0.2);
+            font-size: 14px;
+        }
+        .section-title, .aqi-header, h1, h3, h4, p, div {
+            color: white !important;
+        }
+        .section-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 1.2rem;
+            margin-bottom: 0.8rem;
+        }
+        .aqi-header {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+        <style>
+        .card {
+            background-color: white;
+            color: black;
+            border-radius: 10px;
+            padding: 0.8rem;
+            margin: 0.4rem;
+            box-shadow: 0 0 6px rgba(0,0,0,0.1);
+            font-size: 14px;
+        }
+        .section-title, .aqi-header, h1, h3, h4, p, div {
+            color: black !important;
+        }
+        .section-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 1.2rem;
+            margin-bottom: 0.8rem;
+        }
+        .aqi-header {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+# 📢 Headline
+st.markdown(f"<h1 style='text-align: center;'>🌍 Advance Real-Time Air Quality Tracker</h1>", unsafe_allow_html=True)
+
+# Sidebar inputs
+st.sidebar.markdown("### 🏙 Enter Your City")
+city = st.sidebar.text_input("City", placeholder="Type your city here")
+
+st.sidebar.title("🤖 AirBot")
+st.sidebar.markdown("### Ask me anything about air quality:")
+airbot_input = st.sidebar.text_input("Question", label_visibility="visible")
+
+# Chatbot logic
+if airbot_input:
+    response = "Sure I Tell You:"
+    user_q = airbot_input.lower()
+    if "pm2.5" in user_q:
+        response += " PM2.5 is safe below 12 micrograms per cubic meter."
+    elif "pm10" in user_q:
+        response += " PM10 is safe under 54 micrograms per cubic meter."
+    elif "co" in user_q:
+        response += " CO is safe below 4000 micrograms per cubic meter."
+    elif "no2" in user_q:
+        response += " NO2 is safe when under 50 micrograms per cubic meter."
+    elif "aqi" in user_q:
+        response += " AQI means Air Quality Index."
+    elif "plant" in user_q:
+        response += " Try Areca Palm, Snake Plant, or Money Plant."
+    elif "safe" in user_q:
+        response += " Stay indoors and wear masks during high AQI."
     else:
-        return "No health information available."
-
-# ⚕️ Disease & Recommended Solution
-def disease_and_solution(pollutant, value):
-    if pollutant == "PM2.5":
-        if value <= 12:
-            return "No significant health risks.", "Enjoy fresh outdoor air."
-        elif value <= 35.4:
-            return "Mild risk of asthma or lung irritation.", "Use a mask outdoors and avoid heavy exercise outside."
-        elif value <= 55.4:
-            return "Risk of reduced lung function in sensitive individuals.", "Use an air purifier and avoid outdoor exposure."
-        else:
-            return "High risk of heart disease and lung cancer.", "Wear a high-quality mask, stay indoors, and use air purifiers."
-
-    elif pollutant == "PM10":
-        if value <= 54:
-            return "No major health concern.", "Keep indoor air ventilated."
-        elif value <= 154:
-            return "Risk of allergies and respiratory issues.", "Use dust filters and avoid outdoor activity."
-        else:
-            return "Higher risk of lung disease and infections.", "Install purifiers and avoid polluted areas."
-
-    elif pollutant == "CO":
-        if value <= 4000:
-            return "No serious health threat.", "Ensure proper ventilation indoors."
-        elif value <= 10000:
-            return "Can cause headache and dizziness.", "Avoid exposure to smoke or car exhausts."
-        else:
-            return "Risk of cardiovascular and neurological effects.", "Seek medical attention and increase indoor air flow."
-
-    elif pollutant == "NO2":
-        if value <= 53:
-            return "Safe exposure level.", "No specific actions needed."
-        elif value <= 100:
-            return "Risk of respiratory irritation.", "Avoid industrial areas and use air filters."
-        else:
-            return "High risk of asthma and chronic lung diseases.", "Stay indoors and use advanced air filtration systems."
-
-    else:
-        return "Data not available.", "No solution found."
-
-# 🌿 Indoor Plant Suggestion
-def suggest_plants(aqi):
-    if aqi == 1:
-        return ["Money Plant", "Aloe Vera"]
-    elif aqi == 2:
-        return ["Areca Palm", "Spider Plant"]
-    elif aqi == 3:
-        return ["Snake Plant", "Peace Lily"]
-    elif aqi == 4:
-        return ["Bamboo Palm", "Rubber Plant"]
-    elif aqi == 5:
-        return ["English Ivy", "Areca Palm", "Use Air Purifier"]
-    else:
-        return []
-
-def plant_summary():
-    return (
-        "These plants help reduce indoor air pollutants, improve oxygen levels, "
-        "and protect you from respiratory problems, asthma, and allergies."
-    )
-
-# 🌍 Fetch AQI and Pollutant Data
-def get_air_quality(city_name, api_key):
-    geo_url = f"http://api.openweathermap.org/geo/1.0/direct?q={city_name}&limit=1&appid={api_key}"
-    location_data = requests.get(geo_url).json()
-    if not location_data:
-        return None, "City not found!"
-
-    lat = location_data[0]['lat']
-    lon = location_data[0]['lon']
-
-    air_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={api_key}"
-    air_data = requests.get(air_url).json()
-    aqi = air_data['list'][0]['main']['aqi']
-    components = air_data['list'][0]['components']
-
-    return {
-        "aqi": aqi,
-        "pm2_5": components['pm2_5'],
-        "pm10": components['pm10'],
-        "co": components['co'],
-        "no2": components['no2'],
-        "lat": lat,
-        "lon": lon
-    }, "Success"
-
-# 🌦️ Fetch Wind Speed and Humidity
-def get_weather(lat, lon, api_key):
-    weather_url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric"
-    weather_data = requests.get(weather_url).json()
-    if 'wind' in weather_data and 'humidity' in weather_data['main']:
-        wind_speed = weather_data['wind'].get('speed', 0)
-        humidity = weather_data['main'].get('humidity', 0)
-        return wind_speed, humidity
-    else:
-        return None, None
-
-# 🚀 Main Function
-def main():
-    speak_and_print("Hello! I am a Real-Time Air Quality Tracker.\n")
+        response += " Monitor AQI and limit outdoor activity in high pollution."
+    st.sidebar.success(response)
     
-    api_key = "686d487ae00c37f15964bc0bcba6b953"
-    speak_and_print("Please enter your city name:")
-    city = input("🏙️ Enter City Name: ")
+def pollutant_summary(pollutant, value):
+    thresholds = {
+        "PM2.5": [(0, 12, "Good and safe"), (12, 35, "Moderate"), (35, 55, "Unhealthy"), (55, 1000, "Hazardous")],
+        "PM10": [(0, 54, "Good and safe"), (54, 154, "Moderate"), (154, 1000, "Unhealthy")],
+        "CO": [(0, 4000, "Safe"), (4000, 100000, "High")],
+        "NO2": [(0, 50, "Safe"), (50, 1000, "High")]
+    }
+    for low, high, label in thresholds.get(pollutant, []):
+        if low <= value <= high:
+            return f"{pollutant} level is {label}."
+    return f"{pollutant} level is unknown."
 
-    data, msg = get_air_quality(city, api_key)
-    if not data:
-        speak_and_print(f"❌ Error: {msg}\nSorry! I could not fetch the data.")
-        return
 
-    aqi = data['aqi']
-    status = get_aqi_status(aqi)
-    wind_speed, humidity = get_weather(data['lat'], data['lon'], api_key)
+# API key
+API_KEY = "686d487ae00c37f15964bc0bcba6b953"
 
-    speak_and_print(f"📍 City: {city}")
-    speak_and_print(f"AQI: {aqi} - {status}")
-    speak_and_print(f"The Air Quality Index in {city} is {aqi}, which means the air quality is categorized as '{status}'.\n")
+# Pollutant details
+def pollutant_details(label):
+    info = {
+        "PM2.5": ("Can penetrate lungs and bloodstream.", "Asthma, lung cancer.", "Use air purifiers, stay indoors."),
+        "PM10": ("Irritates nose/throat.", "Allergies, bronchitis.", "Keep windows closed, clean indoor air."),
+        "CO": ("Reduces oxygen supply.", "Headaches, dizziness.", "Ventilate home, avoid smoke."),
+        "NO2": ("Inflames airways.", "Asthma, infections.", "Use air-purifying plants, reduce vehicles.")
+    }
+    return info.get(label, ("", "", ""))
 
-    for pollutant in ["PM2.5", "PM10", "CO", "NO2"]:
-        value = data[pollutant.lower().replace(".", "_")]
-        health = health_message(value, pollutant)
-        disease, solution = disease_and_solution(pollutant, value)
+# Plants
+def recommended_plants():
+    return [
+        ("🌿 Areca Palm", "Releases moisture and removes toxins."),
+        ("🪴 Snake Plant", "Produces oxygen at night."),
+        ("🍀 Money Plant", "Filters air toxins and boosts oxygen.")
+    ]
 
-        paragraph = (
-            f"{pollutant} level in {city} is {value} micrograms per cubic meter.\n"
-            f"Health Impact: {health}\n"
-            f"Disease Risk: {disease}\n"
-            f"Recommended Solution: {solution}\n"
-        )
-        speak_and_print(paragraph)
+# Main display
+if city:
+    try:
+        geo = requests.get(f"http://api.openweathermap.org/geo/1.0/direct?q={city}&limit=1&appid={API_KEY}").json()
+        if geo:
+            lat, lon = geo[0]['lat'], geo[0]['lon']
 
-    if wind_speed is not None:
-        wind_para = (
-            f"Wind speed in {city} is {wind_speed} meters per second.\n"
-            f"This helps disperse pollutants and improve air quality.\n"
-        ) 
-        speak_and_print(wind_para)
+            weather_data = requests.get(f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={API_KEY}&units=metric").json()
+            temp = weather_data['main']['temp']
+            wind = weather_data['wind']['speed']
+            humidity = weather_data['main']['humidity']
 
-    if humidity is not None:
-        humidity_para = (
-            f"The humidity level in {city} is {humidity} percent.\n"
-            f"High humidity allows pollutants to stay suspended in the air longer, increasing the risk of breathing difficulties.\n"
-        )
-        speak_and_print(humidity_para)
+            air_data = requests.get(f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API_KEY}").json()
+            comp = air_data['list'][0]['components']
+            aqi = air_data['list'][0]['main']['aqi']
 
-    plants = suggest_plants(aqi)
-    if plants:
-        plants_text = ", ".join(plants)
-        speak_and_print(
-            f"To improve indoor air quality, you can keep the following plants: {plants_text}.\n"
-            f"{plant_summary()}"
-        )
+            aqi_quality = {
+                1: "Good – Air quality is satisfactory.",
+                2: "Fair – Air quality is acceptable.",
+                3: "Moderate – May affect sensitive people.",
+                4: "Poor – Health effects possible.",
+                5: "Very Poor – Everyone may experience effects."
+            }
 
-# 🏁 Run Program
-if __name__ == "__main__":
-    main()
+            st.markdown(f"<h3 class='aqi-header'>🌫 AQI in {city.title()}: {aqi}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<div class='card'><p><b>🩺 AQI Quality:</b> {aqi_quality.get(aqi, 'Unknown')}</p></div>", unsafe_allow_html=True)
+
+            st.markdown("<div class='section-title'>🌤 Current Weather Conditions</div>", unsafe_allow_html=True)
+            weather_cols = st.columns(3)
+            with weather_cols[0]:
+                st.markdown(f"<div class='card'><h4>🌡 Temperature</h4><p>{temp:.1f} °C</p></div>", unsafe_allow_html=True)
+            with weather_cols[1]:
+                st.markdown(f"<div class='card'><h4>🌬 Wind Speed</h4><p>{wind:.1f} m/s</p></div>", unsafe_allow_html=True)
+            with weather_cols[2]:
+                st.markdown(f"<div class='card'><h4>💧 Humidity</h4><p>{humidity:.0f} %</p></div>", unsafe_allow_html=True)
+
+            pollutant_quality = {
+                "pm2_5": [(0, 12, "Good"), (12.1, 35, "Moderate"), (35.1, 55, "Unhealthy"), (55.1, 1000, "Hazardous")],
+                "pm10": [(0, 54, "Good"), (55, 154, "Moderate"), (155, 1000, "Unhealthy")],
+                "co": [(0, 4000, "Safe"), (4001, 100000, "High")],
+                "no2": [(0, 50, "Safe"), (51, 1000, "High")]
+            }
+
+            def get_quality(pollutant, value):
+                for low, high, label in pollutant_quality[pollutant]:
+                    if low <= value <= high:
+                        return label
+                return "Unknown"
+
+            st.markdown("<div class='section-title'>🔬 Pollutant Levels</div>", unsafe_allow_html=True)
+            cols = st.columns(4)
+            for idx, (label, key) in enumerate(zip(["PM2.5", "PM10", "CO", "NO2"], ["pm2_5", "pm10", "co", "no2"])):
+                value = comp[key]
+                quality = get_quality(key, value)
+                with cols[idx]:
+                    st.markdown(f"""
+                        <div class='card'>
+                        <h3>{label}</h3>
+                        <p>Level: {value:.2f} μg/m³</p>
+                        <p>Status: <b>{quality}</b></p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+            st.markdown("<div class='section-title'>🩺 Health Recommendations</div>", unsafe_allow_html=True)
+            cols2 = st.columns(4)
+            for idx, label in enumerate(["PM2.5", "PM10", "CO", "NO2"]):
+                health, disease, solution = pollutant_details(label)
+                with cols2[idx]:
+                    st.markdown(f"""
+                        <div class='card'>
+                        <h4>{label}</h4>
+                        <p><b>Health Impact:</b> {health}<br>
+                        <b>Disease Risk:</b> {disease}<br>
+                        <b>Recommended Solution:</b> {solution}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+            st.markdown("<div class='section-title'>🌿 Recommended Indoor Plants</div>", unsafe_allow_html=True)
+            cols3 = st.columns(3)
+            for idx, (plant, desc) in enumerate(recommended_plants()):
+                with cols3[idx % 3]:
+                    st.markdown(f"<div class='card'><h4>{plant}</h4><p>{desc}</p></div>", unsafe_allow_html=True)
+
+            forecast = requests.get(f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&hourly=pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,european_aqi&timezone=auto").json()
+
+            if forecast:
+                hourly = forecast["hourly"]
+                df_forecast = pd.DataFrame({
+                    "Time": pd.to_datetime(hourly["time"]),
+                    "PM2.5": hourly["pm2_5"],
+                    "PM10": hourly["pm10"],
+                    "CO": hourly["carbon_monoxide"],
+                    "NO2": hourly["nitrogen_dioxide"]
+                }).set_index("Time")
+            
+            df_forecast = df_forecast.fillna(method="ffill").fillna(method="bfill")
+
+            st.markdown("<div class='section-title'>📈 Pollutant Forecast (Next 48 Hours)</div>", unsafe_allow_html=True)
+            st.line_chart(df_forecast, use_container_width=True)
+
+            def predict_next_hours(series, future=12):
+                X = np.arange(len(series)).reshape(-1, 1)
+                y = np.array(series).reshape(-1, 1)
+                model = LinearRegression().fit(X, y)
+                X_future = np.arange(len(series), len(series) + future).reshape(-1, 1)
+                prediction = model.predict(X_future).flatten()
+                return prediction
+
+            predictions = {}
+            for pollutant in ["PM2.5", "PM10", "CO", "NO2"]:
+                predictions[pollutant] = predict_next_hours(df_forecast[pollutant].values, future=12)
+
+            pred_index = pd.date_range(start=df_forecast.index[-1] + pd.Timedelta(hours=1), periods=12, freq="H")
+            df_pred = pd.DataFrame(predictions, index=pred_index)
+
+            st.markdown("<div class='section-title'>🔮 Pollutant Prediction (Next 12 Hours)</div>", unsafe_allow_html=True)
+            st.line_chart(df_pred, use_container_width=True)
+
+            st.markdown("<div class='section-title'>🧾 Forecast Summary</div>", unsafe_allow_html=True)
+            cols = st.columns(4)
+            for idx, pollutant in enumerate(["PM2.5", "PM10", "CO", "NO2"]):
+                val = df_pred[pollutant].iloc[-1]
+                summary = pollutant_summary(pollutant, val)
+                status = "Safe" if "safe" in summary.lower() else "Not Safe"
+                with cols[idx]:
+                    st.markdown(f"""
+                        <div class='card'>
+                        <h4 style='text-align: center;'>{pollutant}</h4>
+                        <p style='text-align: center;'>Predicted: {val:.2f} μg/m³</p>
+                        <p style='text-align: center;'>Status: {status}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+        else:
+            st.warning("Forecast data not available.")
+
+    except:
+        st.error("Could not fetch data. Please check the city name.")
